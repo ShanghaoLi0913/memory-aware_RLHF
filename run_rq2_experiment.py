@@ -287,7 +287,7 @@ def main():
         config = RQ2ExperimentConfig(
             base_model_name=base_model.strip(),
             rlhf_model_name=instruct_model.strip(),
-            longmemeval_path="/mnt/d/datasets/longmemeval_data/longmemeval_oracle.json",
+            longmemeval_path="data/longmemeval_data/longmemeval_oracle.json",
             max_sessions=None if not args.quick_test else 5,
             output_dir=f"results/rq2_custom/{base_model}_{instruct_model}"
         )

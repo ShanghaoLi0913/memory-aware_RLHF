@@ -30,7 +30,7 @@ class GenerationConfig:
 @dataclass
 class DataConfig:
     """数据配置"""
-    longmemeval_path: str = "/mnt/d/datasets/longmemeval_data"  # WSL路径
+    longmemeval_path: str = "data/longmemeval_data"  # 相对路径
     dataset_variant: str = "oracle"  # oracle, small, medium
     max_sessions: int = 20
     max_context_length: int = 8192

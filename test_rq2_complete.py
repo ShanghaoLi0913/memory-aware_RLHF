@@ -88,7 +88,7 @@ def test_data_loading():
         from data.longmemeval_loader import LongMemEvalLoader
         
         # 测试数据路径
-        data_path = "/mnt/d/datasets/longmemeval_data/longmemeval_oracle.json"
+        data_path = "data/longmemeval_data/longmemeval_oracle.json"
         
         if not os.path.exists(data_path):
             print(f"  ❌ 数据文件不存在: {data_path}")
@@ -215,7 +215,7 @@ def test_prompt_generation():
     try:
         from data.longmemeval_loader import LongMemEvalLoader
         
-        data_path = "/mnt/d/datasets/longmemeval_data/longmemeval_oracle.json"
+        data_path = "data/longmemeval_data/longmemeval_oracle.json"
         if not os.path.exists(data_path):
             print("  ⚠️ 跳过：数据文件不存在")
             return True

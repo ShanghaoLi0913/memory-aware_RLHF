@@ -106,7 +106,7 @@ class RQ2ExperimentConfig:
     rlhf_model_name: str = "Qwen/Qwen2.5-3B-Instruct"  # RLHF模型
     
     # 数据配置
-    longmemeval_path: str = "/mnt/d/datasets/longmemeval_data/longmemeval_oracle.json"
+    longmemeval_path: str = "data/longmemeval_data/longmemeval_oracle.json"
     max_sessions: Optional[int] = None  # 最大会话数量，None表示不限制
     max_instances: Optional[int] = None  # 最大实例数量，None表示不限制
     max_tokens: int = 8192  # 最大生成token数

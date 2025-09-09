@@ -187,7 +187,7 @@ def load_longmemeval_datasets(base_path: str) -> Dict[str, LongMemEvalLoader]:
 
 if __name__ == "__main__":
     # 测试代码
-    data_path = "/mnt/d/datasets/longmemeval_data"  # WSL路径
+    data_path = "data/longmemeval_data"  # WSL路径
     loaders = load_longmemeval_datasets(data_path)
     
     if 'oracle' in loaders:
