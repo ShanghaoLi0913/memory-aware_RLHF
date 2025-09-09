@@ -1,0 +1,32 @@
+{
+  "overall_metrics": {
+    "base_model": {
+      "refusal_rate": 0.1,
+      "avg_refusal_confidence": 0.1,
+      "total_instances": 10
+    },
+    "rlhf_model": {
+      "refusal_rate": 0.3,
+      "avg_refusal_confidence": 0.27,
+      "total_instances": 10
+    },
+    "refusal_rate_increase": 0.19999999999999998,
+    "confidence_increase": 0.17
+  },
+  "by_question_type": {
+    "temporal-reasoning": {
+      "base_refusal_rate": 0.1,
+      "rlhf_refusal_rate": 0.3,
+      "count": 10
+    }
+  },
+  "rq2_conclusion": {
+    "over_refusal_detected": true,
+    "over_refusal_magnitude": 0.19999999999999998,
+    "statistical_significance": {
+      "chi2_statistic": 0.3125,
+      "p_value": 0.5761501220305787,
+      "significant_at_0.05": false
+    }
+  }
+}
