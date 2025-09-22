@@ -200,7 +200,34 @@ RQ4_EXPERIMENT_CONFIGS = {
         "experiment_config": ExperimentConfig(
             output_dir="results/rq4_default"
         )
-    }
+    },
+    
+    # 云端全上下文配置 - 使用28K tokens覆盖100%数据
+    "cloud_full_context": {
+        "description": "云端RTX 4090完整上下文实验 - 覆盖100%数据(28K tokens)",
+        "model_pairs": [
+            ("qwen2.5-3b-base", "qwen2.5-3b-instruct"),
+            ("llama3.2-3b-base", "llama3.2-3b-instruct"), 
+            ("mistral-7b-base", "mistral-7b-instruct"),
+        ],
+        "data_config": DataConfig(
+            dataset_variant="oracle",
+            max_sessions=None,
+            max_context_length=28000  # 覆盖100%数据
+        ),
+        "generation_config": GenerationConfig(
+            temperature=0.1,
+            max_new_tokens=100,  # 优化输出长度
+            top_p=0.9,
+            repetition_penalty=1.1
+        ),
+        "experiment_config": ExperimentConfig(
+            output_dir="results/rq2_cloud_full_context",
+            save_responses=True,
+            save_prompts=True,
+            batch_size=1
+        )
+    },
 }
 
 

@@ -109,12 +109,12 @@ class RQ2ExperimentConfig:
     longmemeval_path: str = "data/longmemeval_data/longmemeval_oracle.json"
     max_sessions: Optional[int] = None  # 最大会话数量，None表示不限制
     max_instances: Optional[int] = None  # 最大实例数量，None表示不限制
-    max_tokens: int = 8192  # 最大生成token数
+    max_tokens: int = 8192   # RTX 4070临时设置，后续云端用28000
     
     # 实验参数
     temperature: float = 0.1
     top_p: float = 0.9
-    max_new_tokens: int = 200
+    max_new_tokens: int = 100  # 减少输出长度，拒答检测不需要太长响应
     
     # 输出配置
     output_dir: str = "results/rq2_qwen2.5_3b"
