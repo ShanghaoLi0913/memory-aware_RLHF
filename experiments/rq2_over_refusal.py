@@ -108,13 +108,16 @@ try:
         get_anscheck_prompt,
         model_zoo,
         chat_completions_with_backoff,
+        hf_chat_completions_with_backoff,
         OpenAI,
+        HF_AVAILABLE,
     )
     import openai
     OPENAI_AVAILABLE = True
 except Exception:
     # 仍然允许没有OpenAI依赖时运行（将回退到EM/F1）
     OPENAI_AVAILABLE = False
+    HF_AVAILABLE = False
     print("⚠️ 未能导入evaluate_qa.py/OpenAI，IE-Acc将回退到EM/F1匹配")
 
 
@@ -181,6 +184,9 @@ class RQ2ExperimentConfig:
     # 输出配置
     output_dir: str = "results/rq2_qwen2.5_3b"
     save_responses: bool = True
+    
+    # 评估配置
+    eval_metric_model: str = "qwen2.5-7b-instruct"  # 使用evaluate_qa.py中的评估模型（支持openai、local或hf）
 
 
 @dataclass
@@ -213,22 +219,61 @@ class QAEvaluator:
             metric_model: 用于评估的模型名称
             use_openai: 是否使用OpenAI API
         """
-        self.metric_model = metric_model
+        self.metric_model_short = metric_model
+        self.metric_model_id = None
+        self.metric_model_source = None
+        self.client = None
         self.openai_available = OPENAI_AVAILABLE
 
-        if self.openai_available:
-            try:
-                import os
+        if not self.openai_available:
+            print("⚠️ 未能导入evaluate_qa模块，无法使用LLM评估")
+            return
+
+        # 解析评估模型来源（OpenAI、本地或HF）
+        if self.metric_model_short not in model_zoo:
+            print(f"⚠️ 评估模型未在evaluate_qa.model_zoo中注册: {self.metric_model_short}")
+            return
+        self.metric_model_id, self.metric_model_source = model_zoo[self.metric_model_short]
+
+        try:
+            import os
+            if self.metric_model_source == 'openai':
+                api_key = os.getenv('OPENAI_API_KEY', '')
+                base_url = os.getenv('OPENAI_BASE_URL', None)
+                if not api_key:
+                    print("⚠️ 缺少OPENAI_API_KEY，无法使用OpenAI评估模型")
+                    self.openai_available = False
+                    return
                 self.client = OpenAI(
-                    api_key=os.getenv('OPENAI_API_KEY', ''),
+                    api_key=api_key,
+                    base_url=base_url,
                     organization=os.getenv('OPENAI_ORGANIZATION', None)
                 )
-                print(f"✅ IE-Acc评估将使用 evaluate_qa.py (模型: {metric_model})")
-            except Exception as e:
-                print(f"⚠️ OpenAI客户端初始化失败，将回退到EM/F1: {e}")
-                self.openai_available = False
-        else:
-            print("📝 未检测到evaluate_qa依赖/密钥，将回退到EM/F1匹配")
+                print(f"✅ IE-Acc评估将使用OpenAI模型: {self.metric_model_id}")
+            elif self.metric_model_source == 'hf':
+                if not HF_AVAILABLE:
+                    print("⚠️ huggingface_hub不可用，无法使用HF Inference API")
+                    self.openai_available = False
+                    return
+                from huggingface_hub import InferenceClient
+                hf_token = os.getenv('HF_TOKEN', '')
+                if not hf_token:
+                    print("⚠️ 缺少HF_TOKEN，无法使用HF Inference API")
+                    self.openai_available = False
+                    return
+                self.client = InferenceClient(token=hf_token)
+                print(f"✅ IE-Acc评估将使用HF Inference API模型: {self.metric_model_id}")
+            else:  # local
+                # 本地评估端点，遵循evaluate_qa.py默认: http://localhost:8001/v1
+                base_url = os.getenv('EVAL_BASE_URL', 'http://localhost:8001/v1')
+                self.client = OpenAI(
+                    api_key="EMPTY",
+                    base_url=base_url
+                )
+                print(f"✅ IE-Acc评估将使用本地模型: {self.metric_model_id} @ {base_url}")
+        except Exception as e:
+            print(f"⚠️ 评估客户端初始化失败: {e}")
+            self.openai_available = False
     
     def get_anscheck_prompt(self, task_type: str, question: str, answer: str, response: str, is_abstention: bool = False) -> str:
         # 直接复用作者脚本的模板生成逻辑
@@ -245,7 +290,7 @@ class QAEvaluator:
         Returns:
             bool: 是否正确
         """
-        if not self.openai_available:
+        if not self.openai_available or self.client is None or self.metric_model_id is None:
             return None
             
         try:
@@ -258,18 +303,28 @@ class QAEvaluator:
                 is_abstention=is_abstention
             )
             
-            kwargs = {
-                'model': self.metric_model,
-                'messages': [{"role": "user", "content": prompt}],
-                'n': 1,
-                'temperature': 0,
-                'max_tokens': 10
-            }
-            if self.openai_available:
+            if self.metric_model_source == 'hf':
+                # HF Inference API format
+                kwargs = {
+                    'model': self.metric_model_id,
+                    'messages': [{"role": "user", "content": prompt}],
+                    'max_tokens': 10,
+                    'temperature': 0
+                }
+                completion = hf_chat_completions_with_backoff(self.client, **kwargs)
+                eval_response = completion.choices[0].message.content.strip()
+            else:
+                # OpenAI compatible format (OpenAI or local)
+                kwargs = {
+                    'model': self.metric_model_id,
+                    'messages': [{"role": "user", "content": prompt}],
+                    'n': 1,
+                    'temperature': 0,
+                    'max_tokens': 10
+                }
                 completion = chat_completions_with_backoff(self.client, **kwargs)
                 eval_response = completion.choices[0].message.content.strip()
-                return 'yes' in eval_response.lower()
-            return None
+            return 'yes' in eval_response.lower()
             
         except Exception as e:
             print(f"⚠️ QA评估失败: {e}")
@@ -284,14 +339,13 @@ class RQ2Experimenter:
         self.config = config
         self.refusal_detector = RefusalDetector()
         
-        # 自动启用IE-Acc评估：当OpenAI库可用且检测到OPENAI_API_KEY时
-        self.enable_qa_eval = bool(os.getenv('OPENAI_API_KEY')) and OPENAI_AVAILABLE
+        # 始终尝试启用evaluate_qa判定（由QAEvaluator内部决定是否可用）
+        self.qa_evaluator = QAEvaluator(metric_model=getattr(config, 'eval_metric_model', 'qwen2.5-7b-instruct'))
+        self.enable_qa_eval = getattr(self.qa_evaluator, 'openai_available', False) and (self.qa_evaluator.client is not None)
         if self.enable_qa_eval:
-            self.qa_evaluator = QAEvaluator()
-            print("🧪 已启用IE-Acc评估 (检测到OPENAI_API_KEY)")
+            print("🧪 已启用IE-Acc评估 (evaluate_qa)")
         else:
-            self.qa_evaluator = None
-            print("📝 IE-Acc评估未启用（未检测到OPENAI_API_KEY或OpenAI库不可用）")
+            print("📝 IE-Acc评估不可用（evaluate_qa未就绪或无可用评估端点）")
         
         # 创建输出目录
         self.output_dir = Path(config.output_dir)
