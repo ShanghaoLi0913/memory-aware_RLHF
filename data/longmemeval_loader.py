@@ -80,21 +80,22 @@ class LongMemEvalLoader:
     
     def get_rq2_instances(self) -> List[LongMemEvalInstance]:
         """
-        获取RQ2实验相关的数据实例
+        获取RQ2实验相关的数据实例 (IE子集)
         RQ2关注过度拒答：在有明确证据的情况下模型是否错误拒答
+        
+        根据用户设计：IE子集包含150个正常问题（不管是否有证据）
         """
         instances = self.load_data()
         
-        # 筛选有证据且非拒答问题的实例
+        # 筛选非拒答问题的实例（正常问题）
         rq2_instances = []
         for instance in instances:
-            # 排除设计为拒答的问题
+            # 排除设计为拒答的问题（_abs结尾）
             if instance.is_abstention:
                 continue
             
-            # 只包含上下文中有证据的问题
-            if instance.has_evidence_in_context:
-                rq2_instances.append(instance)
+            # 包含所有正常问题（不管是否有证据）
+            rq2_instances.append(instance)
         
         return rq2_instances
     

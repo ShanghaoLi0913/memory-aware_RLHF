@@ -108,10 +108,10 @@ try:
         get_anscheck_prompt,
         model_zoo,
         chat_completions_with_backoff,
-        hf_chat_completions_with_backoff,
-        OpenAI,
+        hf_chat_completions_with_retries,
         HF_AVAILABLE,
     )
+    from openai import OpenAI
     import openai
     OPENAI_AVAILABLE = True
 except Exception:
@@ -186,7 +186,7 @@ class RQ2ExperimentConfig:
     save_responses: bool = True
     
     # 评估配置
-    eval_metric_model: str = "qwen2.5-7b-instruct"  # 使用evaluate_qa.py中的评估模型（支持openai、local或hf）
+    eval_metric_model: str = "qwen2.5-3b-instruct-local"  # 使用evaluate_qa.py中的评估模型（支持openai、local或hf）
 
 
 @dataclass
@@ -342,7 +342,23 @@ class RQ2Experimenter:
         # 始终尝试启用evaluate_qa判定（由QAEvaluator内部决定是否可用）
         self.qa_evaluator = QAEvaluator(metric_model=getattr(config, 'eval_metric_model', 'qwen2.5-7b-instruct'))
         self.enable_qa_eval = getattr(self.qa_evaluator, 'openai_available', False) and (self.qa_evaluator.client is not None)
-        if self.enable_qa_eval:
+        
+        # 如果是HF评估，先做连通性测试
+        if hasattr(self.qa_evaluator, 'metric_model_source') and self.qa_evaluator.metric_model_source == 'hf':
+            try:
+                # 快速连通性测试
+                test_response = self.qa_evaluator.client.chat_completion(
+                    model=self.qa_evaluator.metric_model_id,
+                    messages=[{"role": "user", "content": "test"}],
+                    max_tokens=1
+                )
+                self.enable_qa_eval = True
+                print("🧪 已启用IE-Acc评估 (HF Inference API)")
+            except Exception as e:
+                self.enable_qa_eval = False
+                print(f"⚠️ HF API连通性测试失败: {str(e)[:100]}")
+                print("⚠️ 将跳过IE-Acc评估，继续运行实验")
+        elif self.enable_qa_eval:
             print("🧪 已启用IE-Acc评估 (evaluate_qa)")
         else:
             print("📝 IE-Acc评估不可用（evaluate_qa未就绪或无可用评估端点）")
@@ -563,14 +579,13 @@ Answer:"""
         rlhf_ie_non_refusal = [r for r in rlhf_ie_responses if not r.is_refusal]
         
         # 计算IE-Acc (Information Extraction Accuracy)
+        # 根据用户设计：IE-Acc = 在IE子集中，非拒答回答的准确率
         # 使用evaluate_qa.py的方法，如果没有QA评估器则设为None
         base_ie_correct_count = 0
         rlhf_ie_correct_count = 0
-        base_ie_total = len(base_ie_responses)
-        rlhf_ie_total = len(rlhf_ie_responses)
-
+        
         if self.qa_evaluator:
-            # 使用LLM评估器
+            # 使用LLM评估器计算非拒答回答的准确率
             for r in base_ie_responses:
                 if not r.is_refusal and r.is_correct is True:
                     base_ie_correct_count += 1
@@ -578,8 +593,10 @@ Answer:"""
                 if not r.is_refusal and r.is_correct is True:
                     rlhf_ie_correct_count += 1
             
-            base_ie_acc = base_ie_correct_count / base_ie_total if base_ie_total else 0
-            rlhf_ie_acc = rlhf_ie_correct_count / rlhf_ie_total if rlhf_ie_total else 0
+            # IE-Acc = 正确回答数 / 总IE样本数（包括拒答）
+            # 这是用户设计的核心指标：在IE子集上的整体准确率
+            base_ie_acc = base_ie_correct_count / len(base_ie_responses) if base_ie_responses else 0
+            rlhf_ie_acc = rlhf_ie_correct_count / len(rlhf_ie_responses) if rlhf_ie_responses else 0
         else:
             # 没有QA评估器，设为None
             base_ie_acc = None
@@ -641,7 +658,6 @@ Answer:"""
     def calculate_mcnemar_test(self, base_responses: List[ModelResponse], 
                               rlhf_responses: List[ModelResponse]) -> Dict[str, Any]:
         """计算McNemar检验，比较两个模型在相同问题上的拒答行为差异"""
-        # from scipy.stats import mcnemar  # 临时禁用
         
         # 构建2x2表格：base_refuse vs rlhf_refuse
         both_refuse = 0      # 两个都拒答
@@ -664,23 +680,72 @@ Answer:"""
                            [rlhf_only_refuse, both_answer]]
         
         try:
-            result = type('MockResult', (), {
-        'statistic': 0.0, 
-        'pvalue': 0.05
-    })()  # 临时模拟结果
+            # 使用scipy.stats.mcnemar进行真实统计检验
+            from scipy.stats import mcnemar
+            
+            # 构建McNemar检验所需的2x2表格
+            # mcnemar需要的是[[a, b], [c, d]]格式，其中b和c是discordant pairs
+            mcnemar_table = [[both_refuse, base_only_refuse],
+                           [rlhf_only_refuse, both_answer]]
+            
+            # 执行McNemar检验
+            result = mcnemar(mcnemar_table, correction=True)  # 使用连续性修正
+            
             return {
                 'statistic': float(result.statistic),
                 'p_value': float(result.pvalue),
                 'significant': result.pvalue < 0.05,
                 'contingency_table': contingency_table,
-                'interpretation': 'RLHF显著更保守' if result.pvalue < 0.05 and rlhf_only_refuse > base_only_refuse else '无显著差异'
+                'discordant_pairs': {
+                    'base_only_refuse': base_only_refuse,
+                    'rlhf_only_refuse': rlhf_only_refuse
+                },
+                'interpretation': self._interpret_mcnemar_result(result, rlhf_only_refuse, base_only_refuse)
             }
+        except ImportError:
+            # 如果没有scipy，使用简化的卡方检验
+            return self._fallback_significance_test(contingency_table, rlhf_only_refuse, base_only_refuse)
         except Exception as e:
             return {
                 'error': str(e),
                 'contingency_table': contingency_table,
                 'interpretation': '无法计算统计显著性'
             }
+    
+    def _interpret_mcnemar_result(self, result, rlhf_only_refuse, base_only_refuse):
+        """解释McNemar检验结果"""
+        if result.pvalue < 0.05:
+            if rlhf_only_refuse > base_only_refuse:
+                return 'RLHF显著更保守 (p<0.05)'
+            else:
+                return 'Base显著更保守 (p<0.05)'
+        else:
+            return '无显著差异 (p≥0.05)'
+    
+    def _fallback_significance_test(self, contingency_table, rlhf_only_refuse, base_only_refuse):
+        """当scipy不可用时的简化统计检验"""
+        # 简化的卡方检验
+        total_discordant = rlhf_only_refuse + base_only_refuse
+        if total_discordant == 0:
+            return {
+                'statistic': 0.0,
+                'p_value': 1.0,
+                'significant': False,
+                'contingency_table': contingency_table,
+                'interpretation': '无差异数据'
+            }
+        
+        # 简化的二项检验
+        expected_rlhf = total_discordant / 2
+        chi2 = (rlhf_only_refuse - expected_rlhf) ** 2 / expected_rlhf if expected_rlhf > 0 else 0
+        
+        return {
+            'statistic': chi2,
+            'p_value': 0.05 if chi2 > 3.84 else 0.1,  # 简化的p值估计
+            'significant': chi2 > 3.84,
+            'contingency_table': contingency_table,
+            'interpretation': 'RLHF更保守' if rlhf_only_refuse > base_only_refuse else 'Base更保守'
+        }
     
     def analyze_responses(self, base_responses: List[ModelResponse], 
                          rlhf_responses: List[ModelResponse]) -> Dict[str, Any]:

@@ -6,12 +6,27 @@ import backoff
 import openai
 from openai import OpenAI
 import numpy as np
+import time
+
+try:
+    from huggingface_hub import InferenceClient
+    HF_AVAILABLE = True
+except Exception:
+    HF_AVAILABLE = False
 
 
 model_zoo = {
     'llama-3.1-70b-instruct': ('meta-llama/Meta-Llama-3.1-70B-Instruct', 'local'),
     'gpt-4o-mini': ('gpt-4o-mini-2024-07-18', 'openai'),
     'gpt-4o': ('gpt-4o-2024-08-06', 'openai'),
+    # HF Inference API models
+    'qwen2.5-7b-instruct': ('Qwen/Qwen2.5-7B-Instruct', 'hf'),
+    'qwen2.5-14b-instruct': ('Qwen/Qwen2.5-14B-Instruct', 'hf'),
+    'llama-3.1-8b-instruct': ('meta-llama/Meta-Llama-3.1-8B-Instruct', 'hf'),
+    'llama-3.1-70b-instruct-hf': ('meta-llama/Meta-Llama-3.1-70B-Instruct', 'hf'),
+    # Local OpenAI-compatible entries
+    'llama-3.1-8b-instruct-local': ('/root/autodl-tmp/models/LLM-Research/Meta-Llama-3___1-8B-Instruct', 'local'),
+    'qwen2.5-3b-instruct-local': ('/root/autodl-tmp/models/qwen/Qwen2.5-3B', 'local'),
 }
 
 
@@ -19,6 +34,21 @@ model_zoo = {
                                     openai.APIError))
 def chat_completions_with_backoff(client, **kwargs):
     return client.chat.completions.create(**kwargs)
+
+def hf_chat_completions_with_retries(client, kwargs, max_retries=1, initial_backoff_seconds=2):
+    """Lightweight retry wrapper for HF chat_completion with short timeouts.
+
+    Retries are controlled via environment variable HF_RETRIES (default=1).
+    Timeout should be set on the client via HF_TIMEOUT (seconds).
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return client.chat_completion(**kwargs)
+        except Exception as e:
+            if attempt == max_retries:
+                raise
+            sleep_seconds = initial_backoff_seconds * (2 ** attempt)
+            time.sleep(sleep_seconds)
 
 
 def get_anscheck_prompt(task, question, answer, response, abstention=False):
@@ -63,14 +93,36 @@ if __name__ == '__main__':
         openai.organization = os.getenv('OPENAI_ORGANIZATION')
         openai_api_key = os.getenv('OPENAI_API_KEY')
         openai_api_base = None
-    else:
+        metric_client = OpenAI(
+            api_key=openai_api_key,
+            base_url=openai_api_base,
+        )
+    elif metric_model_source == 'local':
         openai_api_key = "EMPTY"
-        openai_api_base = "http://localhost:8001/v1"
-    
-    metric_client = OpenAI(
-        api_key=openai_api_key,
-        base_url=openai_api_base,
-    )
+        openai_api_base = os.getenv('EVAL_BASE_URL', "http://localhost:8001/v1")
+        metric_client = OpenAI(
+            api_key=openai_api_key,
+            base_url=openai_api_base,
+        )
+    elif metric_model_source == 'hf':
+        if not HF_AVAILABLE:
+            print('huggingface_hub is not available. Please install huggingface_hub to use HF Inference API.')
+            exit()
+        hf_token = os.getenv('HF_TOKEN', '')
+        if not hf_token:
+            print('HF_TOKEN is not set. Please export HF_TOKEN to use HF Inference API.')
+            exit()
+        # Optional custom endpoint
+        hf_endpoint = os.getenv('HF_ENDPOINT', None)
+        # Short timeout to avoid blocking on unreachable endpoints (default 15s)
+        try:
+            hf_timeout = int(os.getenv('HF_TIMEOUT', '15'))
+        except Exception:
+            hf_timeout = 15
+        metric_client = InferenceClient(token=hf_token, timeout=hf_timeout, headers=None, base_url=hf_endpoint)
+    else:
+        print('Unknown metric model source:', metric_model_source)
+        exit()
 
     try:
         hypotheses = [json.loads(line) for line in open(hyp_file).readlines()]
@@ -99,17 +151,32 @@ if __name__ == '__main__':
             hyp = entry['hypothesis']
             
             prompt = get_anscheck_prompt(qtype, q, ans, hyp, abstention='_abs' in entry['question_id'])
-            kwargs = {
-                'model': metric_model,
-                'messages':[
-                    {"role": "user", "content": prompt}
-                ],
-                'n': 1,
-                'temperature': 0,
-                'max_tokens': 10
-            }
-            completion = chat_completions_with_backoff(metric_client, **kwargs)
-            eval_response = completion.choices[0].message.content.strip()
+            if metric_model_source == 'hf':
+                kwargs = {
+                    'model': metric_model,
+                    'messages':[{"role": "user", "content": prompt}],
+                    'max_tokens': 10,
+                    'temperature': 0
+                }
+                # Limited retries to avoid long blocking when network is down
+                try:
+                    hf_retries = int(os.getenv('HF_RETRIES', '1'))
+                except Exception:
+                    hf_retries = 1
+                completion = hf_chat_completions_with_retries(metric_client, kwargs, max_retries=hf_retries)
+                eval_response = completion.choices[0].message.content.strip()
+            else:
+                kwargs = {
+                    'model': metric_model,
+                    'messages':[
+                        {"role": "user", "content": prompt}
+                    ],
+                    'n': 1,
+                    'temperature': 0,
+                    'max_tokens': 10
+                }
+                completion = chat_completions_with_backoff(metric_client, **kwargs)
+                eval_response = completion.choices[0].message.content.strip()
             label = 'yes' in eval_response.lower()
             entry['autoeval_label'] = {
                 'model': metric_model,
