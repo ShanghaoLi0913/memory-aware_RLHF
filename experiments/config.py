@@ -61,11 +61,11 @@ MODELS = {
     # Qwen2.5 3B模型配置 (12GB GPU友好) - 使用本地路径
     "qwen2.5-3b-base": ModelConfig(
         name="qwen2.5-3b-base",
-        path="/root/autodl-tmp/models/qwen/Qwen2.5-3B",
+        path="/root/autodl-tmp/models/qwen/Qwen2.5-3B",  # Base模型
     ),
     "qwen2.5-3b-instruct": ModelConfig(
         name="qwen2.5-3b-instruct",
-        path="/root/autodl-tmp/models/qwen/Qwen2.5-3B",
+        path="/root/autodl-tmp/models/qwen/Qwen2.5-3B-Instruct",  # Instruct模型
     ),
     
     # Mistral-7B-v0.3 模型配置 (云上运行)

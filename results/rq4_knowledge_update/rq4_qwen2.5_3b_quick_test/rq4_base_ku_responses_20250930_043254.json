@@ -1,0 +1,165 @@
+[
+  {
+    "question_id": "gpt4_2655b836",
+    "is_abs": false,
+    "question": "What was the first issue I had with my new car after its first service?",
+    "new_answer": "GPS system not functioning correctly",
+    "old_candidates": [
+      "I'm thinking of getting my car detailed soon. Do you know any good detailers in the area or have any recommendations? By the way, I just got my car serviced for the first time on March 15th, and it was a great experience."
+    ],
+    "response": "",
+    "class": "refusal"
+  },
+  {
+    "question_id": "gpt4_2487a7cb",
+    "is_abs": false,
+    "question": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar?",
+    "new_answer": "'Data Analysis using Python' webinar",
+    "old_candidates": [
+      "I've been thinking about my goals and priorities lately, and I realized that I want to focus more on learning new skills and expanding my knowledge in different areas. I've been attending various workshops and lectures, like the workshop on \"Effective Time Management\" at the local community center last Saturday, and I'm finding them really helpful. Do you have any suggestions for online resources or courses that could help me learn new skills or expand my knowledge?"
+    ],
+    "response": "",
+    "class": "refusal"
+  },
+  {
+    "question_id": "gpt4_76048e76",
+    "is_abs": false,
+    "question": "Which vehicle did I take care of first in February, the bike or the car?",
+    "new_answer": "bike",
+    "old_candidates": [
+      "I'm thinking of getting a new bike rack for my car. Do you have any recommendations? By the way, I've been having some issues with my bike lately - in mid-February, I had to take it in for repairs because the gears were acting up and I couldn't shift properly."
+    ],
+    "response": "",
+    "class": "refusal"
+  },
+  {
+    "question_id": "gpt4_2312f94c",
+    "is_abs": false,
+    "question": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+    "new_answer": "Samsung Galaxy S22",
+    "old_candidates": [
+      "I'm planning a trip to Hawaii and I want to make sure my new phone stays charged. Can you recommend some must-visit places in Hawaii? By the way, I recently got a new Samsung Galaxy S22 from the Best Buy store at the mall on February 20th, and I'm loving it so far."
+    ],
+    "response": "The Samsung Galaxy S22 was got first.",
+    "class": "new"
+  },
+  {
+    "question_id": "0bb5a684",
+    "is_abs": false,
+    "question": "How many days before the team meeting I was preparing for did I attend the workshop on 'Effective Communication in the Workplace'?",
+    "new_answer": "7 days. 8 days (including the last day) is also acceptable.",
+    "old_candidates": [
+      "I'm preparing for an upcoming meeting with my team and I want to make sure I'm effectively communicating our project updates. I recently attended a workshop on \"Effective Communication in the Workplace\" on January 10th, which was really helpful in improving my active listening and conflict resolution skills. Can you provide some tips on structuring my presentation to keep my team engaged?"
+    ],
+    "response": "You attended the workshop on 'Effective Communication in the Workplace' on January 10th, which was 7 days before the team meeting on January 17th.",
+    "class": "other"
+  },
+  {
+    "question_id": "08f4fc43",
+    "is_abs": false,
+    "question": "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+    "new_answer": "30 days. 31 days (including the last day) is also acceptable.",
+    "old_candidates": [
+      "I'm planning to volunteer at a local soup kitchen this weekend and I was wondering if you could give me some tips on how to make a positive impact during my time there. By the way, I just came from the Ash Wednesday service at the cathedral on February 1st, and it really made me reflect on the importance of giving back to the community."
+    ],
+    "response": "1 day",
+    "class": "other"
+  },
+  {
+    "question_id": "2c63a862",
+    "is_abs": false,
+    "question": "How many days did it take for me to find a house I loved after starting to work with Rachel?",
+    "new_answer": "14 days. 15 days (including the last day) is also acceptable.",
+    "old_candidates": [
+      "I'd like to ask Rachel about the new construction listings in these areas. Since I started working with her on 2/15, I'm hoping she can give me a better sense of what's available in my budget. Do you think I should also ask her about any upcoming developments or projects in the pipeline?"
+    ],
+    "response": "You found a house you loved on March 1st, and you started working with Rachel on February 15th. That's a total of 29 days from the start of your search to finding the house you loved.",
+    "class": "other"
+  },
+  {
+    "question_id": "gpt4_385a5000",
+    "is_abs": false,
+    "question": "Which seeds were started first, the tomatoes or the marigolds?",
+    "new_answer": "Tomatoes",
+    "old_candidates": [
+      "I'm planning to plant some seedlings in my backyard soon. Can you tell me what's the ideal temperature for planting them outside? By the way, I just started some marigold seeds that arrived on March 3rd, and they're already germinating - excited to see them grow!"
+    ],
+    "response": "The marigolds were started first, as the user mentioned they just started some marigold seeds that arrived on March 3rd, and they're already germinating.",
+    "class": "other"
+  },
+  {
+    "question_id": "2a1811e2",
+    "is_abs": false,
+    "question": "How many days had passed between the Hindu festival of Holi and the Sunday mass at St. Mary's Church?",
+    "new_answer": "21 days. 22 days (including the last day) is also acceptable.",
+    "old_candidates": [
+      "I'm planning to volunteer at a local community event next weekend and I was wondering if you could suggest some ideas for fundraising activities that have been successful in the past. By the way, I just got back from Sunday mass at St. Mary's Church on March 19th, where Father John's sermon really inspired me to give back to the community."
+    ],
+    "response": "19 days",
+    "class": "other"
+  },
+  {
+    "question_id": "bbf86515",
+    "is_abs": false,
+    "question": "How many days before the 'Rack Fest' did I participate in the 'Turbocharged Tuesdays' event?",
+    "new_answer": "4 days.",
+    "old_candidates": [
+      "I'm looking for some recommendations on performance air filters for my 2018 Ford Mustang GT. I recently modified my exhaust system and I'm looking to squeeze out some more power. By the way, I just participated in the \"Turbocharged Tuesdays\" auto racking event at the local racing track on June 14th, where I managed to achieve a personal best time of 12.8 seconds in the quarter-mile drag race."
+    ],
+    "response": "You participated in the 'Turbocharged Tuesdays' event on June 14th, which was 4 days before the 'Rack Fest' on June 18th.",
+    "class": "new"
+  },
+  {
+    "question_id": "gpt4_5dcc0aab",
+    "is_abs": false,
+    "question": "Which pair of shoes did I clean last month?",
+    "new_answer": "white Adidas sneakers",
+    "old_candidates": [],
+    "response": "I cleaned my white Adidas sneakers last month.",
+    "class": "new"
+  },
+  {
+    "question_id": "gpt4_0b2f1d21",
+    "is_abs": false,
+    "question": "Which event happened first, the purchase of the coffee maker or the malfunction of the stand mixer?",
+    "new_answer": "The malfunction of the stand mixer",
+    "old_candidates": [
+      "I'm having some issues with my coffee maker's performance lately. I bought it about three weeks ago, it's a black and stainless steel machine from a well-known brand, and I've been using it every morning since then. Do you have any cleaning or maintenance tips to keep it running smoothly?"
+    ],
+    "response": "The purchase of the coffee maker happened first.",
+    "class": "other"
+  },
+  {
+    "question_id": "f0853d11",
+    "is_abs": false,
+    "question": "How many days had passed between the 'Walk for Hunger' event and the 'Coastal Cleanup' event?",
+    "new_answer": "14 days. 8 days (including the last day) is also acceptable.",
+    "old_candidates": [
+      "I'm planning a beach trip to Santa Monica soon and I was wondering if you could recommend some eco-friendly sunscreen brands. By the way, I recently volunteered at the Coastal Cleanup event on March 7th and it was amazing to see the impact we made on keeping our beaches clean."
+    ],
+    "response": "10 days",
+    "class": "other"
+  },
+  {
+    "question_id": "gpt4_6ed717ea",
+    "is_abs": false,
+    "question": "Which item did I purchase first, the dog bed for Max or the training pads for Luna?",
+    "new_answer": "Training pads for Luna",
+    "old_candidates": [
+      "I'm thinking of getting some more supplies for my puppy, Luna. She's still in potty-training, and I've been using those eco-friendly training pads from Chewy.com. I got a set of 10 for $25 about a month ago, and they've been a lifesaver. Do you have any recommendations for other potty-training aids or tips?"
+    ],
+    "response": "The dog bed for Max was purchased first.",
+    "class": "other"
+  },
+  {
+    "question_id": "gpt4_70e84552",
+    "is_abs": false,
+    "question": "Which task did I complete first, fixing the fence or trimming the goats' hooves?",
+    "new_answer": "Fixing the fence",
+    "old_candidates": [
+      "I'm thinking of hosting a farm open house event soon and I want to make sure everything is perfect. Can you help me come up with some ideas for activities and also give me some tips on how to promote it on social media? By the way, I just fixed that broken fence on the east side of my property three weeks ago, where my goats like to graze, and it's been a huge relief to have them safe and secure."
+    ],
+    "response": "You fixed the fence three weeks ago, and you trimmed the goats' hooves two weeks ago.",
+    "class": "other"
+  }
+]

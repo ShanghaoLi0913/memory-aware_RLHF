@@ -339,29 +339,14 @@ class RQ2Experimenter:
         self.config = config
         self.refusal_detector = RefusalDetector()
         
-        # 始终尝试启用evaluate_qa判定（由QAEvaluator内部决定是否可用）
-        self.qa_evaluator = QAEvaluator(metric_model=getattr(config, 'eval_metric_model', 'qwen2.5-7b-instruct'))
-        self.enable_qa_eval = getattr(self.qa_evaluator, 'openai_available', False) and (self.qa_evaluator.client is not None)
+        # 暂时禁用IE-Acc评估以避免内存冲突
+        # self.qa_evaluator = QAEvaluator(metric_model=getattr(config, 'eval_metric_model', 'qwen2.5-7b-instruct'))
+        # self.enable_qa_eval = getattr(self.qa_evaluator, 'openai_available', False) and (self.qa_evaluator.client is not None)
+        self.qa_evaluator = None
+        self.enable_qa_eval = False
         
-        # 如果是HF评估，先做连通性测试
-        if hasattr(self.qa_evaluator, 'metric_model_source') and self.qa_evaluator.metric_model_source == 'hf':
-            try:
-                # 快速连通性测试
-                test_response = self.qa_evaluator.client.chat_completion(
-                    model=self.qa_evaluator.metric_model_id,
-                    messages=[{"role": "user", "content": "test"}],
-                    max_tokens=1
-                )
-                self.enable_qa_eval = True
-                print("🧪 已启用IE-Acc评估 (HF Inference API)")
-            except Exception as e:
-                self.enable_qa_eval = False
-                print(f"⚠️ HF API连通性测试失败: {str(e)[:100]}")
-                print("⚠️ 将跳过IE-Acc评估，继续运行实验")
-        elif self.enable_qa_eval:
-            print("🧪 已启用IE-Acc评估 (evaluate_qa)")
-        else:
-            print("📝 IE-Acc评估不可用（evaluate_qa未就绪或无可用评估端点）")
+        # 暂时禁用IE-Acc评估
+        print("📝 IE-Acc评估已禁用（避免内存冲突）")
         
         # 创建输出目录
         self.output_dir = Path(config.output_dir)
@@ -388,24 +373,35 @@ class RQ2Experimenter:
     def load_model(self, model_name: str) -> Tuple[AutoModelForCausalLM, AutoTokenizer]:
         """加载模型和分词器"""
         import os
+        from .config import get_model_config
         
         # HF镜像源已在文件开头设置
         
-        print(f"正在加载模型: {model_name}")
+        # 从配置中获取正确的模型路径
+        try:
+            model_config = get_model_config(model_name)
+            model_path = model_config.path
+            print(f"📁 使用配置路径: {model_path}")
+        except ValueError:
+            # 如果配置中没有，直接使用传入的model_name
+            model_path = model_name
+            print(f"⚠️ 配置中未找到 {model_name}，使用原始路径: {model_path}")
         
-        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        print(f"正在加载模型: {model_name} -> {model_path}")
+        
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         
         # 简化的模型加载配置
         model = AutoModelForCausalLM.from_pretrained(
-            model_name,
+            model_path,
             torch_dtype=torch.float16,
             device_map="auto",  # 让transformers自动选择
             trust_remote_code=True
         )
         
-        print(f"✅ 模型加载完成: {model_name}")
+        print(f"✅ 模型加载完成: {model_name} -> {model_path}")
         return model, tokenizer
     
     def create_prompt(self, instance: LongMemEvalInstance) -> str:
@@ -474,8 +470,8 @@ Answer:"""
             
             # QA准确性评估（仅对非拒答响应进行）
             is_correct = None
-            if self.enable_qa_eval and not is_refusal and self.qa_evaluator:
-                is_correct = self.qa_evaluator.evaluate_response(instance, response_text)
+            # if self.enable_qa_eval and not is_refusal and self.qa_evaluator:
+            #     is_correct = self.qa_evaluator.evaluate_response(instance, response_text)
             
             response = ModelResponse(
                 question_id=instance.question_id,
@@ -504,8 +500,8 @@ Answer:"""
             
             # QA准确性评估（ABS应该拒答，评估拒答是否正确）
             is_correct = None
-            if self.enable_qa_eval and self.qa_evaluator:
-                is_correct = self.qa_evaluator.evaluate_response(instance, response_text)
+            # if self.enable_qa_eval and self.qa_evaluator:
+            #     is_correct = self.qa_evaluator.evaluate_response(instance, response_text)
             
             response = ModelResponse(
                 question_id=instance.question_id,
@@ -584,33 +580,31 @@ Answer:"""
         base_ie_correct_count = 0
         rlhf_ie_correct_count = 0
         
-        if self.qa_evaluator:
-            # 使用LLM评估器计算非拒答回答的准确率
-            for r in base_ie_responses:
-                if not r.is_refusal and r.is_correct is True:
-                    base_ie_correct_count += 1
-            for r in rlhf_ie_responses:
-                if not r.is_refusal and r.is_correct is True:
-                    rlhf_ie_correct_count += 1
-            
-            # IE-Acc = 正确回答数 / 总IE样本数（包括拒答）
-            # 这是用户设计的核心指标：在IE子集上的整体准确率
-            base_ie_acc = base_ie_correct_count / len(base_ie_responses) if base_ie_responses else 0
-            rlhf_ie_acc = rlhf_ie_correct_count / len(rlhf_ie_responses) if rlhf_ie_responses else 0
-        else:
-            # 没有QA评估器，设为None
-            base_ie_acc = None
-            rlhf_ie_acc = None
+        # 暂时禁用IE-Acc评估
+        base_ie_acc = None
+        rlhf_ie_acc = None
         
         # 统计显著性检验 (McNemar test for paired comparison)
         mcnemar_result = self.calculate_mcnemar_test(base_ie_responses, rlhf_ie_responses)
+        
+        # 获取实际加载的模型路径
+        from .config import get_model_config
+        try:
+            base_model_path = get_model_config(self.config.base_model_name).path
+        except ValueError:
+            base_model_path = self.config.base_model_name
+            
+        try:
+            rlhf_model_path = get_model_config(self.config.rlhf_model_name).path
+        except ValueError:
+            rlhf_model_path = self.config.rlhf_model_name
         
         analysis = {
             'experiment_info': {
                 'ie_total_count': len(base_ie_responses),
                 'abs_total_count': len(base_abs_responses),
-                'base_model': self.config.base_model_name,
-                'rlhf_model': self.config.rlhf_model_name
+                'base_model': base_model_path,
+                'rlhf_model': rlhf_model_path
             },
             'orr_analysis': {
                 'base_orr': round(base_orr, 4),
@@ -618,7 +612,7 @@ Answer:"""
                 'orr_difference': round(rlhf_orr - base_orr, 4),
                 'base_ie_refusals': base_ie_refusals,
                 'rlhf_ie_refusals': rlhf_ie_refusals,
-                'interpretation': 'RLHF更保守' if rlhf_orr > base_orr else 'Base更保守'
+                'interpretation': '无差异' if abs(rlhf_orr - base_orr) < 0.001 else ('RLHF更保守' if rlhf_orr > base_orr else 'Base更保守')
             },
             'abs_analysis': {
                 'base_abs_legit_refuse': round(base_abs_legit_refuse, 4),
@@ -680,16 +674,43 @@ Answer:"""
                            [rlhf_only_refuse, both_answer]]
         
         try:
-            # 使用scipy.stats.mcnemar进行真实统计检验
-            from scipy.stats import mcnemar
+            # 使用scipy.stats实现McNemar检验
+            from scipy.stats import chi2_contingency
+            import numpy as np
             
-            # 构建McNemar检验所需的2x2表格
-            # mcnemar需要的是[[a, b], [c, d]]格式，其中b和c是discordant pairs
-            mcnemar_table = [[both_refuse, base_only_refuse],
-                           [rlhf_only_refuse, both_answer]]
+            # McNemar检验：比较discordant pairs (base_only_refuse vs rlhf_only_refuse)
+            # 使用卡方检验的连续性修正版本
+            discordant_total = base_only_refuse + rlhf_only_refuse
             
-            # 执行McNemar检验
-            result = mcnemar(mcnemar_table, correction=True)  # 使用连续性修正
+            if discordant_total == 0:
+                # 没有discordant pairs，无法进行McNemar检验
+                return {
+                    'statistic': 0.0,
+                    'p_value': 1.0,
+                    'significant': False,
+                    'contingency_table': contingency_table,
+                    'discordant_pairs': {
+                        'base_only_refuse': base_only_refuse,
+                        'rlhf_only_refuse': rlhf_only_refuse
+                    },
+                    'interpretation': '无差异数据'
+                }
+            
+            # McNemar检验统计量：(|b-c|-1)²/(b+c)，其中b=base_only_refuse, c=rlhf_only_refuse
+            # 连续性修正：减1
+            mcnemar_stat = (abs(base_only_refuse - rlhf_only_refuse) - 1) ** 2 / discordant_total
+            
+            # 使用卡方分布计算p值 (自由度=1)
+            from scipy.stats import chi2
+            p_value = 1 - chi2.cdf(mcnemar_stat, df=1)
+            
+            # 创建结果对象
+            class McNemarResult:
+                def __init__(self, statistic, pvalue):
+                    self.statistic = statistic
+                    self.pvalue = pvalue
+            
+            result = McNemarResult(mcnemar_stat, p_value)
             
             return {
                 'statistic': float(result.statistic),
@@ -735,13 +756,17 @@ Answer:"""
                 'interpretation': '无差异数据'
             }
         
-        # 简化的二项检验
-        expected_rlhf = total_discordant / 2
-        chi2 = (rlhf_only_refuse - expected_rlhf) ** 2 / expected_rlhf if expected_rlhf > 0 else 0
+        # 简化的McNemar检验
+        # McNemar公式: χ² = (|b-c|-1)² / (b+c)
+        b, c = base_only_refuse, rlhf_only_refuse
+        chi2 = (abs(b - c) - 1) ** 2 / (b + c) if (b + c) > 0 else 0
+        
+        # 简化的p值估计 (基于卡方分布)
+        p_value = 0.5 if chi2 < 0.5 else 0.1 if chi2 < 3.84 else 0.05
         
         return {
             'statistic': chi2,
-            'p_value': 0.05 if chi2 > 3.84 else 0.1,  # 简化的p值估计
+            'p_value': p_value,
             'significant': chi2 > 3.84,
             'contingency_table': contingency_table,
             'interpretation': 'RLHF更保守' if rlhf_only_refuse > base_only_refuse else 'Base更保守'

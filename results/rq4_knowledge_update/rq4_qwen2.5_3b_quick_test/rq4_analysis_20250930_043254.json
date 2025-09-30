@@ -1,0 +1,55 @@
+{
+  "_readme": {
+    "description": "RQ4实验结果分析 - 知识更新任务下的更新一致性与拒答",
+    "experiment_type": "Base vs RLHF 在KU任务"
+  },
+  "experiment_info": {
+    "ku_total": 15,
+    "ku_answerable": 15,
+    "base_model": "/root/autodl-tmp/models/qwen/Qwen2.5-3B",
+    "rlhf_model": "/root/autodl-tmp/models/qwen/Qwen2.5-3B-Instruct"
+  },
+  "ku_analysis": {
+    "uc": {
+      "base": 0.2,
+      "rlhf": 0.3333333333333333,
+      "diff": 0.1333333333333333,
+      "mcnemar": {
+        "b": 1,
+        "c": 3,
+        "statistic": 0.25,
+        "p_value": 0.6170750774519739
+      }
+    },
+    "sar": {
+      "base": 0.0,
+      "rlhf": 0.0,
+      "diff": 0.0,
+      "mcnemar": {
+        "b": 0,
+        "c": 0,
+        "statistic": 0.0,
+        "p_value": 1.0
+      }
+    },
+    "orr": {
+      "base": {
+        "rate": 0.2,
+        "wilson": {
+          "p": 0.2,
+          "lo": 0.07047420643610411,
+          "hi": 0.4518593533465045
+        }
+      },
+      "rlhf": {
+        "rate": 0.4,
+        "wilson": {
+          "p": 0.4,
+          "lo": 0.1982422808259466,
+          "hi": 0.642535572434923
+        }
+      },
+      "diff": 0.2
+    }
+  }
+}

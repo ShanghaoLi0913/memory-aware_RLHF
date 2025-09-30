@@ -1,0 +1,66 @@
+{
+  "experiment_info": {
+    "ie_total_count": 470,
+    "abs_total_count": 30,
+    "base_model": "/root/autodl-tmp/models/qwen/Qwen2.5-3B",
+    "rlhf_model": "/root/autodl-tmp/models/qwen/Qwen2.5-3B-Instruct"
+  },
+  "orr_analysis": {
+    "base_orr": 0.2213,
+    "rlhf_orr": 0.1894,
+    "orr_difference": -0.0319,
+    "base_ie_refusals": 104,
+    "rlhf_ie_refusals": 89,
+    "interpretation": "Base更保守"
+  },
+  "abs_analysis": {
+    "base_abs_legit_refuse": 0.2667,
+    "rlhf_abs_legit_refuse": 0.7667,
+    "legit_refuse_difference": 0.5,
+    "base_abs_refusals": 8,
+    "rlhf_abs_refusals": 23
+  },
+  "ie_non_refusal_analysis": {
+    "base_non_refusal_count": 366,
+    "rlhf_non_refusal_count": 381,
+    "base_non_refusal_rate": 0.7787,
+    "rlhf_non_refusal_rate": 0.8106
+  },
+  "ie_accuracy_analysis": {
+    "base_correct": 0,
+    "base_accuracy": null,
+    "rlhf_correct": 0,
+    "rlhf_accuracy": null,
+    "accuracy_difference": null,
+    "denominator": {
+      "ie_total_count": 470
+    }
+  },
+  "statistical_tests": {
+    "mcnemar_test": {
+      "statistic": 1.3900709219858156,
+      "p_value": 0.2383931229706785,
+      "significant": false,
+      "contingency_table": [
+        [
+          26,
+          78
+        ],
+        [
+          63,
+          303
+        ]
+      ],
+      "discordant_pairs": {
+        "base_only_refuse": 78,
+        "rlhf_only_refuse": 63
+      },
+      "interpretation": "无显著差异 (p≥0.05)"
+    }
+  },
+  "summary": {
+    "key_finding": "RLHF模型在IE上拒答率减少 3.2%",
+    "over_refusal_evidence": false,
+    "abs_legitimacy": "RLHF在ABS上合法拒答率: 76.7%"
+  }
+}
