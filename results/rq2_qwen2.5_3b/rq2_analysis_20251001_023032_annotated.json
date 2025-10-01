@@ -13,8 +13,8 @@
     }
   },
   "experiment_info": {
-    "ie_total_count": 10,
-    "abs_total_count": 3,
+    "ie_total_count": 0,
+    "abs_total_count": 30,
     "base_model": "/root/autodl-tmp/models/qwen/Qwen2.5-3B",
     "rlhf_model": "/root/autodl-tmp/models/qwen/Qwen2.5-3B-Instruct",
     "_notes": {
@@ -25,12 +25,12 @@
     }
   },
   "orr_analysis": {
-    "base_orr": 0.1,
-    "rlhf_orr": 0.1,
-    "orr_difference": 0.0,
-    "base_ie_refusals": 1,
-    "rlhf_ie_refusals": 1,
-    "interpretation": "Base更保守",
+    "base_orr": 0,
+    "rlhf_orr": 0,
+    "orr_difference": 0,
+    "base_ie_refusals": 0,
+    "rlhf_ie_refusals": 0,
+    "interpretation": "无差异",
     "_notes": {
       "base_orr": "Base模型在IE子集上的拒答率",
       "rlhf_orr": "RLHF模型在IE子集上的拒答率",
@@ -41,11 +41,11 @@
     }
   },
   "abs_analysis": {
-    "base_abs_legit_refuse": 0.3333,
-    "rlhf_abs_legit_refuse": 0.6667,
-    "legit_refuse_difference": 0.3333,
-    "base_abs_refusals": 1,
-    "rlhf_abs_refusals": 2,
+    "base_abs_legit_refuse": 0.2667,
+    "rlhf_abs_legit_refuse": 0.0333,
+    "legit_refuse_difference": -0.2333,
+    "base_abs_refusals": 8,
+    "rlhf_abs_refusals": 1,
     "_notes": {
       "base_abs_legit_refuse": "Base模型合法拒答率 - 在ABS子集上",
       "rlhf_abs_legit_refuse": "RLHF模型合法拒答率 - 在ABS子集上",
@@ -55,10 +55,10 @@
     }
   },
   "ie_non_refusal_analysis": {
-    "base_non_refusal_count": 9,
-    "rlhf_non_refusal_count": 9,
-    "base_non_refusal_rate": 0.9,
-    "rlhf_non_refusal_rate": 0.9,
+    "base_non_refusal_count": 0,
+    "rlhf_non_refusal_count": 0,
+    "base_non_refusal_rate": 0,
+    "rlhf_non_refusal_rate": 0,
     "_notes": {
       "base_non_refusal_count": "Base模型正常回答数量",
       "rlhf_non_refusal_count": "RLHF模型正常回答数量",
@@ -73,7 +73,7 @@
     "rlhf_accuracy": null,
     "accuracy_difference": null,
     "denominator": {
-      "ie_total_count": 10
+      "ie_total_count": 0
     },
     "_notes": {
       "base_ie_acc": "Base模型IE准确率 - 正常回答中答对的比例",
@@ -87,19 +87,23 @@
   "statistical_tests": {
     "mcnemar_test": {
       "statistic": 0.0,
-      "p_value": 0.1,
+      "p_value": 1.0,
       "significant": false,
       "contingency_table": [
         [
           0,
-          1
+          0
         ],
         [
-          1,
-          8
+          0,
+          0
         ]
       ],
-      "interpretation": "Base更保守",
+      "discordant_pairs": {
+        "base_only_refuse": 0,
+        "rlhf_only_refuse": 0
+      },
+      "interpretation": "无差异数据",
       "_notes": {
         "statistic": "McNemar统计量",
         "p_value": "P值 (α=0.05)",
@@ -112,7 +116,7 @@
   "summary": {
     "key_finding": "RLHF模型在IE上拒答率减少 0.0%",
     "over_refusal_evidence": false,
-    "abs_legitimacy": "RLHF在ABS上合法拒答率: 66.7%",
+    "abs_legitimacy": "RLHF在ABS上合法拒答率: 3.3%",
     "_notes": {
       "key_finding": "关键发现",
       "over_refusal_evidence": "是否发现过度拒答证据",

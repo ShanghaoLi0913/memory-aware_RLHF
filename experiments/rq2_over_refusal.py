@@ -102,18 +102,22 @@ from tqdm import tqdm
 
 from data.longmemeval_loader import LongMemEvalLoader, LongMemEvalInstance
 from utils.refusal_detector import RefusalDetector
+
+# 默认关闭HF评审端（当前不使用）
+HF_AVAILABLE = False
 try:
-    # 使用数据集作者提供的评估实现
+    # 使用数据集作者提供的评估实现（仅导入现有符号）
     from evaluate_qa import (
         get_anscheck_prompt,
         model_zoo,
         chat_completions_with_backoff,
-        hf_chat_completions_with_retries,
-        HF_AVAILABLE,
     )
     from openai import OpenAI
     import openai
-    OPENAI_AVAILABLE = True
+    # 若存在API Key则开启OpenAI评审
+    OPENAI_AVAILABLE = bool(os.getenv('OPENAI_API_KEY'))
+    if not OPENAI_AVAILABLE:
+        raise RuntimeError('OPENAI_API_KEY not set')
 except Exception:
     # 仍然允许没有OpenAI依赖时运行（将回退到EM/F1）
     OPENAI_AVAILABLE = False
@@ -186,7 +190,10 @@ class RQ2ExperimentConfig:
     save_responses: bool = True
     
     # 评估配置
-    eval_metric_model: str = "qwen2.5-3b-instruct-local"  # 使用evaluate_qa.py中的评估模型（支持openai、local或hf）
+    eval_metric_model: str = "gpt-4o-mini"  # 使用evaluate_qa.py中的评估模型（支持openai、local或hf）
+
+    # 仅运行ABS子集（忽略IE），并且覆盖任何快速限制以“全部ABS”为准
+    abs_only: bool = False
 
 
 @dataclass
@@ -279,6 +286,10 @@ class QAEvaluator:
         # 直接复用作者脚本的模板生成逻辑
         return get_anscheck_prompt(task_type, question, answer, response, abstention=is_abstention)
     
+    def get_refusal_check_prompt(self, question: str, response: str) -> str:
+        from evaluate_qa import get_refusal_check_prompt as _p
+        return _p(question, response)
+    
     def evaluate_response(self, instance: LongMemEvalInstance, response: str) -> bool:
         """
         评估单个响应的准确性
@@ -330,6 +341,26 @@ class QAEvaluator:
             print(f"⚠️ QA评估失败: {e}")
             return None
 
+    def detect_refusal(self, instance: LongMemEvalInstance, response: str) -> Optional[bool]:
+        """使用评审模型检测是否拒答（适用于 IE 与 ABS）。"""
+        if not self.openai_available or self.client is None:
+            return None
+        try:
+            prompt = self.get_refusal_check_prompt(instance.question, response)
+            kwargs = {
+                'model': self.metric_model_id,
+                'messages':[{"role":"user","content": prompt}],
+                'n':1,
+                'temperature':0,
+                'max_tokens':10
+            }
+            completion = chat_completions_with_backoff(self.client, **kwargs)
+            text = completion.choices[0].message.content.strip()
+            return 'yes' in text.lower()
+        except Exception as e:
+            print(f"⚠️ 拒答检测失败: {e}")
+            return None
+
 
 class RQ2Experimenter:
     """RQ2实验执行器"""
@@ -337,16 +368,12 @@ class RQ2Experimenter:
     def __init__(self, config: RQ2ExperimentConfig):
         import os
         self.config = config
-        self.refusal_detector = RefusalDetector()
+        self.refusal_detector = None  # 不再使用本地规则检测
         
-        # 暂时禁用IE-Acc评估以避免内存冲突
-        # self.qa_evaluator = QAEvaluator(metric_model=getattr(config, 'eval_metric_model', 'qwen2.5-7b-instruct'))
-        # self.enable_qa_eval = getattr(self.qa_evaluator, 'openai_available', False) and (self.qa_evaluator.client is not None)
-        self.qa_evaluator = None
-        self.enable_qa_eval = False
-        
-        # 暂时禁用IE-Acc评估
-        print("📝 IE-Acc评估已禁用（避免内存冲突）")
+        # 启用基于 evaluate_qa.py 的评审
+        self.qa_evaluator = QAEvaluator(metric_model=getattr(config, 'eval_metric_model', 'gpt-4o-mini'))
+        self.enable_qa_eval = getattr(self.qa_evaluator, 'openai_available', False) and (self.qa_evaluator.client is not None)
+        print("📝 IE-Acc与拒答检测将使用 evaluate_qa.py 的 LLM-as-a-judge")
         
         # 创建输出目录
         self.output_dir = Path(config.output_dir)
@@ -360,7 +387,11 @@ class RQ2Experimenter:
         self.abs_instances = self.loader.get_abstention_instances()  # Abstention - 应该拒答
         
         # 应用实例数量限制
-        if config.max_instances is not None:
+        if config.abs_only:
+            # 仅运行ABS：清空IE实例，ABS不做数量截断
+            self.ie_instances = []
+            print("⚙️ 已启用 abs_only：将只评估 ABS 子集（全部样本）")
+        elif config.max_instances is not None:
             self.ie_instances = self.ie_instances[:config.max_instances]
             # ABS数量较少，按比例限制
             abs_limit = min(len(self.abs_instances), config.max_instances // 3)
@@ -463,15 +494,14 @@ Answer:"""
             prompt = self.create_prompt(instance)
             response_text = self.generate_response(model, tokenizer, prompt)
             
-            is_refusal, refusal_confidence = self.refusal_detector.detect_refusal(
-                response=response_text,
-                question=instance.question
-            )
+            # 使用评审模型检测拒答
+            is_refusal = self.qa_evaluator.detect_refusal(instance, response_text) if self.enable_qa_eval else None
+            refusal_confidence = 1.0 if is_refusal else 0.0 if is_refusal is not None else 0.0
             
             # QA准确性评估（仅对非拒答响应进行）
             is_correct = None
-            # if self.enable_qa_eval and not is_refusal and self.qa_evaluator:
-            #     is_correct = self.qa_evaluator.evaluate_response(instance, response_text)
+            if self.enable_qa_eval and (is_refusal is False or is_refusal is None):
+                is_correct = self.qa_evaluator.evaluate_response(instance, response_text)
             
             response = ModelResponse(
                 question_id=instance.question_id,
@@ -479,7 +509,7 @@ Answer:"""
                 question=instance.question,
                 context_length=len(prompt),
                 response=response_text,
-                is_refusal=is_refusal,
+                is_refusal=bool(is_refusal) if is_refusal is not None else False,
                 refusal_confidence=refusal_confidence,
                 has_evidence=instance.has_evidence_in_context,
                 is_correct=is_correct,
@@ -493,15 +523,13 @@ Answer:"""
             prompt = self.create_prompt(instance)
             response_text = self.generate_response(model, tokenizer, prompt)
             
-            is_refusal, refusal_confidence = self.refusal_detector.detect_refusal(
-                response=response_text,
-                question=instance.question
-            )
+            is_refusal = self.qa_evaluator.detect_refusal(instance, response_text) if self.enable_qa_eval else None
+            refusal_confidence = 1.0 if is_refusal else 0.0 if is_refusal is not None else 0.0
             
             # QA准确性评估（ABS应该拒答，评估拒答是否正确）
             is_correct = None
-            # if self.enable_qa_eval and self.qa_evaluator:
-            #     is_correct = self.qa_evaluator.evaluate_response(instance, response_text)
+            if self.enable_qa_eval:
+                is_correct = self.qa_evaluator.evaluate_response(instance, response_text)
             
             response = ModelResponse(
                 question_id=instance.question_id,
@@ -509,7 +537,7 @@ Answer:"""
                 question=instance.question,
                 context_length=len(prompt),
                 response=response_text,
-                is_refusal=is_refusal,
+                is_refusal=bool(is_refusal) if is_refusal is not None else False,
                 refusal_confidence=refusal_confidence,
                 has_evidence=False,  # ABS实例设计为无证据
                 is_correct=is_correct,

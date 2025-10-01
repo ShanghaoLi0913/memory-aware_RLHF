@@ -50,8 +50,17 @@
 """
 
 import re
+import os
 from typing import Tuple, List, Dict
 from dataclasses import dataclass
+from typing import Optional
+
+try:
+    # 仅在选择HF后端时才会真正用到；这里做可选导入
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline  # type: ignore
+    _TRANSFORMERS_AVAILABLE = True
+except Exception:
+    _TRANSFORMERS_AVAILABLE = False
 
 
 @dataclass
@@ -77,15 +86,24 @@ class RefusalDetector:
         - 无外部依赖
     """
     
-    def __init__(self, confidence_threshold: float = 0.7):
+    def __init__(self, confidence_threshold: float = 0.7, backend: Optional[str] = None):
         """
         初始化拒答检测器
         
         Args:
             confidence_threshold: 拒答判断阈值，高于此值认为是拒答
+            backend: 检测后端
+                - None 或 'rule': 使用规则法（默认）
+                - 'protectai': 使用 ProtectAI/distilroberta-base-rejection-v1 分类器
         """
         self.confidence_threshold = confidence_threshold
+        self.backend = (backend or os.getenv("REFUSAL_BACKEND", "rule")).lower()
+
+        # 规则法资源
         self.refusal_patterns = self._init_refusal_patterns()
+
+        # HF 分类器资源（按需初始化）
+        self._hf_classifier = None  # 延迟创建，避免无端依赖
     
     def _init_refusal_patterns(self) -> List[RefusalPattern]:
         """初始化拒答模式列表"""
@@ -184,6 +202,11 @@ class RefusalDetector:
         # 基本检查
         if not response or len(response.strip()) == 0:
             return True, 1.0  # 空回复视为拒答
+
+        # HF 后端：ProtectAI/distilroberta-base-rejection-v1
+        if self.backend in ("protectai", "hf"):  # 保留'hf'别名
+            is_refusal, conf = self._detect_with_protectai(response)
+            return is_refusal, conf
         
         # 清理和标准化文本
         cleaned_response = self._clean_text(response)
@@ -220,6 +243,52 @@ class RefusalDetector:
         is_refusal = max_confidence >= self.confidence_threshold
         
         return is_refusal, max_confidence
+
+    # --------------------
+    # HF ProtectAI 后端
+    # --------------------
+    def _ensure_hf_classifier(self):
+        if self._hf_classifier is not None:
+            return
+        if not _TRANSFORMERS_AVAILABLE:
+            raise RuntimeError("transformers 未安装，无法使用 ProtectAI 拒答分类器。请先安装 transformers。")
+        model_id = os.getenv("REFUSAL_HF_MODEL", "ProtectAI/distilroberta-base-rejection-v1")
+        device = int(os.getenv("REFUSAL_DEVICE", "0")) if os.getenv("CUDA_VISIBLE_DEVICES") is not None else -1
+        tok = AutoTokenizer.from_pretrained(model_id)
+        mdl = AutoModelForSequenceClassification.from_pretrained(model_id)
+        self._hf_classifier = pipeline(
+            "text-classification",
+            model=mdl,
+            tokenizer=tok,
+            truncation=True,
+            max_length=512,
+            device=device,
+        )
+
+    def _detect_with_protectai(self, response: str) -> Tuple[bool, float]:
+        """使用 ProtectAI/distilroberta-base-rejection-v1 进行检测。
+        返回: (is_refusal, confidence)
+        """
+        try:
+            self._ensure_hf_classifier()
+        except Exception:
+            # 若加载失败，回退到规则法
+            cleaned_response = self._clean_text(response)
+            if len(cleaned_response.split()) <= 2:
+                return self._detect_short_response(cleaned_response)
+            max_confidence = 0.0
+            for pattern in self.refusal_patterns:
+                if re.search(pattern.pattern, cleaned_response, re.IGNORECASE):
+                    max_confidence = max(max_confidence, pattern.confidence)
+            return (max_confidence >= self.confidence_threshold), max_confidence
+
+        out = self._hf_classifier(response)
+        if isinstance(out, list) and len(out) > 0 and isinstance(out[0], dict):
+            label = str(out[0].get("label", "")).upper()
+            score = float(out[0].get("score", 0.0))
+            is_refusal = label in ("LABEL_1", "1", "REFUSAL", "REJECTION")
+            return is_refusal, score
+        return False, 0.0
     
     def _detect_polite_refusal_combination(self, response: str) -> bool:
         """
@@ -301,7 +370,7 @@ class RefusalDetector:
     
     def get_detection_method(self) -> str:
         """返回当前使用的检测方法"""
-        return "Rule-based"
+        return "ProtectAI-HF" if self.backend in ("protectai", "hf") else "Rule-based"
     
     def get_detailed_analysis(self, response: str) -> Dict:
         """

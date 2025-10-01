@@ -6,27 +6,12 @@ import backoff
 import openai
 from openai import OpenAI
 import numpy as np
-import time
-
-try:
-    from huggingface_hub import InferenceClient
-    HF_AVAILABLE = True
-except Exception:
-    HF_AVAILABLE = False
 
 
 model_zoo = {
     'llama-3.1-70b-instruct': ('meta-llama/Meta-Llama-3.1-70B-Instruct', 'local'),
     'gpt-4o-mini': ('gpt-4o-mini-2024-07-18', 'openai'),
     'gpt-4o': ('gpt-4o-2024-08-06', 'openai'),
-    # HF Inference API models
-    'qwen2.5-7b-instruct': ('Qwen/Qwen2.5-7B-Instruct', 'hf'),
-    'qwen2.5-14b-instruct': ('Qwen/Qwen2.5-14B-Instruct', 'hf'),
-    'llama-3.1-8b-instruct': ('meta-llama/Meta-Llama-3.1-8B-Instruct', 'hf'),
-    'llama-3.1-70b-instruct-hf': ('meta-llama/Meta-Llama-3.1-70B-Instruct', 'hf'),
-    # Local OpenAI-compatible entries
-    'llama-3.1-8b-instruct-local': ('/root/autodl-tmp/models/LLM-Research/Meta-Llama-3___1-8B-Instruct', 'local'),
-    'qwen2.5-3b-instruct-local': ('/root/autodl-tmp/models/qwen/Qwen2.5-3B', 'local'),
 }
 
 
@@ -34,21 +19,6 @@ model_zoo = {
                                     openai.APIError))
 def chat_completions_with_backoff(client, **kwargs):
     return client.chat.completions.create(**kwargs)
-
-def hf_chat_completions_with_retries(client, kwargs, max_retries=1, initial_backoff_seconds=2):
-    """Lightweight retry wrapper for HF chat_completion with short timeouts.
-
-    Retries are controlled via environment variable HF_RETRIES (default=1).
-    Timeout should be set on the client via HF_TIMEOUT (seconds).
-    """
-    for attempt in range(max_retries + 1):
-        try:
-            return client.chat_completion(**kwargs)
-        except Exception as e:
-            if attempt == max_retries:
-                raise
-            sleep_seconds = initial_backoff_seconds * (2 ** attempt)
-            time.sleep(sleep_seconds)
 
 
 def get_anscheck_prompt(task, question, answer, response, abstention=False):
@@ -73,6 +43,19 @@ def get_anscheck_prompt(task, question, answer, response, abstention=False):
     return prompt
 
 
+def get_refusal_check_prompt(question, response):
+    """检测是否为拒答"""
+    template = (
+        "I will give you a question and a response from a model. "
+        "Please answer yes if the model refuses to answer or indicates it lacks information "
+        "(e.g., 'I don't know', 'insufficient information', 'cannot determine', 'not mentioned').\n\n"
+        "Question: {}\n\n"
+        "Model Response: {}\n\n"
+        "Does the model refuse to answer? Answer yes or no only."
+    )
+    return template.format(question, response)
+
+
 if __name__ == '__main__':
     if len(sys.argv) != 4:
         print('Usage: python evaluate_qa.py metric_model hyp_file ref_file')
@@ -93,36 +76,14 @@ if __name__ == '__main__':
         openai.organization = os.getenv('OPENAI_ORGANIZATION')
         openai_api_key = os.getenv('OPENAI_API_KEY')
         openai_api_base = None
-        metric_client = OpenAI(
-            api_key=openai_api_key,
-            base_url=openai_api_base,
-        )
-    elif metric_model_source == 'local':
-        openai_api_key = "EMPTY"
-        openai_api_base = os.getenv('EVAL_BASE_URL', "http://localhost:8001/v1")
-        metric_client = OpenAI(
-            api_key=openai_api_key,
-            base_url=openai_api_base,
-        )
-    elif metric_model_source == 'hf':
-        if not HF_AVAILABLE:
-            print('huggingface_hub is not available. Please install huggingface_hub to use HF Inference API.')
-            exit()
-        hf_token = os.getenv('HF_TOKEN', '')
-        if not hf_token:
-            print('HF_TOKEN is not set. Please export HF_TOKEN to use HF Inference API.')
-            exit()
-        # Optional custom endpoint
-        hf_endpoint = os.getenv('HF_ENDPOINT', None)
-        # Short timeout to avoid blocking on unreachable endpoints (default 15s)
-        try:
-            hf_timeout = int(os.getenv('HF_TIMEOUT', '15'))
-        except Exception:
-            hf_timeout = 15
-        metric_client = InferenceClient(token=hf_token, timeout=hf_timeout, headers=None, base_url=hf_endpoint)
     else:
-        print('Unknown metric model source:', metric_model_source)
-        exit()
+        openai_api_key = "EMPTY"
+        openai_api_base = "http://localhost:8001/v1"
+    
+    metric_client = OpenAI(
+        api_key=openai_api_key,
+        base_url=openai_api_base,
+    )
 
     try:
         hypotheses = [json.loads(line) for line in open(hyp_file).readlines()]
@@ -150,52 +111,71 @@ if __name__ == '__main__':
             ans = qid2qdata[entry['question_id']]['answer']
             hyp = entry['hypothesis']
             
-            prompt = get_anscheck_prompt(qtype, q, ans, hyp, abstention='_abs' in entry['question_id'])
-            if metric_model_source == 'hf':
-                kwargs = {
-                    'model': metric_model,
-                    'messages':[{"role": "user", "content": prompt}],
-                    'max_tokens': 10,
-                    'temperature': 0
-                }
-                # Limited retries to avoid long blocking when network is down
-                try:
-                    hf_retries = int(os.getenv('HF_RETRIES', '1'))
-                except Exception:
-                    hf_retries = 1
-                completion = hf_chat_completions_with_retries(metric_client, kwargs, max_retries=hf_retries)
-                eval_response = completion.choices[0].message.content.strip()
-            else:
-                kwargs = {
-                    'model': metric_model,
-                    'messages':[
-                        {"role": "user", "content": prompt}
-                    ],
-                    'n': 1,
-                    'temperature': 0,
-                    'max_tokens': 10
-                }
-                completion = chat_completions_with_backoff(metric_client, **kwargs)
-                eval_response = completion.choices[0].message.content.strip()
+            is_abs = ('_abs' in entry['question_id'])
+            prompt = get_anscheck_prompt(qtype, q, ans, hyp, abstention=is_abs)
+            kwargs = {
+                'model': metric_model,
+                'messages':[
+                    {"role": "user", "content": prompt}
+                ],
+                'n': 1,
+                'temperature': 0,
+                'max_tokens': 10
+            }
+            completion = chat_completions_with_backoff(metric_client, **kwargs)
+            eval_response = completion.choices[0].message.content.strip()
             label = 'yes' in eval_response.lower()
             entry['autoeval_label'] = {
                 'model': metric_model,
                 'label': label
             }
+            # For non-abstention questions, also do refusal detection
+            if not is_abs:
+                r_prompt = get_refusal_check_prompt(q, hyp)
+                r_kwargs = {
+                    'model': metric_model,
+                    'messages':[{"role":"user","content": r_prompt}],
+                    'n': 1,
+                    'temperature': 0,
+                    'max_tokens': 10
+                }
+                r_completion = chat_completions_with_backoff(metric_client, **r_kwargs)
+                r_text = r_completion.choices[0].message.content.strip()
+                is_refusal = ('yes' in r_text.lower())
+                entry['autoeval_refusal'] = {
+                    'model': metric_model,
+                    'label': is_refusal
+                }
             logs.append(entry)
             if verbose:
-                print(json.dumps({
+                log_dict = {
                     'question': q,
                     'answer': ans,
                     'hypothesis': hyp,
                     'autoeval_label': label
-                }, indent=4), flush=True)
+                }
+                if not is_abs and 'autoeval_refusal' in entry:
+                    log_dict['autoeval_refusal'] = entry['autoeval_refusal']['label']
+                print(json.dumps(log_dict, indent=4), flush=True)
             print(json.dumps(entry), file=out_f)
             qtype2acc[qid2qtype[entry['question_id']]].append(1 if label else 0)
 
-            
-    print('Accuracy:', round(np.mean([1 if x['autoeval_label']['label'] else 0 for x in logs]).item(), 4))
-    for k,v in qtype2acc.items():
-        print('\t{}: {} ({})'.format(k, round(np.mean(v), 4), len(v)))
+    # Split metrics for non-abstention vs abstention
+    abs_logs = [x for x in logs if '_abs' in x['question_id']]
+    non_abs_logs = [x for x in logs if '_abs' not in x['question_id']]
 
-    print('Saved to', result_file)
+    print('\n=== Non-Abstention Questions ===')
+    if non_abs_logs:
+        accuracy = float(np.mean([1 if x['autoeval_label']['label'] else 0 for x in non_abs_logs]))
+        print(f'Accuracy: {round(accuracy, 4)} ({len(non_abs_logs)} questions)')
+
+    print('\n=== Abstention Questions ===')
+    if abs_logs:
+        correct_refusal = float(np.mean([1 if x['autoeval_label']['label'] else 0 for x in abs_logs]))
+        print(f'Correct Refusal Rate: {round(correct_refusal, 4)} ({len(abs_logs)} questions)')
+
+    print('\n=== By Task Type ===')
+    for k,v in qtype2acc.items():
+        print(f'\t{k}: {round(float(np.mean(v)), 4)} ({len(v)})')
+
+    print(f'\nSaved to {result_file}')

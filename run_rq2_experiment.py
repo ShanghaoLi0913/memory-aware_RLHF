@@ -295,6 +295,8 @@ def main():
                        help="快速测试模式 (只用前10个实例)")
     parser.add_argument("--comprehensive", action="store_true",
                        help="运行多模型综合实验")
+    parser.add_argument("--abs-only", action="store_true",
+                       help="仅评估ABS子集（应该拒答），忽略IE 子集")
     
     args = parser.parse_args()
     
@@ -336,6 +338,8 @@ def main():
             # 预设配置名格式: "qwen2.5-3b"
             preset_name = args.model_pair
             print(f"🎯 运行预设实验: {preset_name}")
+            # 打印评审后端信息（当前使用 evaluate_qa.py 的 LLM-as-a-judge）
+            print("🧪 评审后端: evaluate_qa.py (LLM-as-a-judge)")
             
             config = create_rq2_config_from_preset(preset_name)
             
@@ -346,12 +350,17 @@ def main():
                 # 更新输出目录名称
                 config.output_dir = config.output_dir.replace("rq2_", "rq2_").rstrip("/") + "_quick_test"
                 print(f"⚡ 快速测试模式：限制10个实例，5个会话")
+            if args.abs_only:
+                config.abs_only = True
+                print("⚙️ 启用 --abs-only：只评估 ABS 子集")
         
         result = run_rq2_experiment(config)
         return
     
     # 运行单个配置的实验
     print(f"🚀 运行RQ2实验，配置: {args.config}")
+    # 打印评审后端信息（当前使用 evaluate_qa.py 的 LLM-as-a-judge）
+    print("🧪 评审后端: evaluate_qa.py (LLM-as-a-judge)")
     
     try:
         config = create_rq2_config_from_preset(args.config)
@@ -362,6 +371,9 @@ def main():
             config.max_instances = 10  # 限制实例数量
             config.max_sessions = 5   # 限制会话数量
             config.output_dir = f"{config.output_dir}_quick_test"
+        if args.abs_only:
+            config.abs_only = True
+            print("⚙️ 启用 --abs-only：只评估 ABS 子集")
         
         result = run_rq2_experiment(config)
         
